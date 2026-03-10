@@ -6,6 +6,7 @@ Worker is run as a separate Railway service:
 """
 import logging
 from typing import Any
+from urllib.parse import urlparse
 from arq import create_pool
 from arq.connections import RedisSettings
 
@@ -19,19 +20,27 @@ CURRENT_SCHEMA_VERSION = 1
 
 
 def get_redis_settings() -> RedisSettings:
-    """Parse Redis URL into ARQ RedisSettings."""
-    url = settings.REDIS_URL
-    # Handle redis://[:password@]host[:port][/db]
-    url = url.replace("redis://", "")
-    password = None
-    if "@" in url:
-        password, url = url.rsplit("@", 1)
-        if password.startswith(":"):
-            password = password[1:]
-    host_port = url.split("/")[0]
-    host = host_port.split(":")[0] if ":" in host_port else host_port
-    port = int(host_port.split(":")[1]) if ":" in host_port else 6379
-    return RedisSettings(host=host, port=port, password=password)
+    """
+    Parse REDIS_URL into ARQ RedisSettings using stdlib urlparse.
+
+    Railway Redis URLs follow the format:
+        redis://default:PASSWORD@redis.railway.internal:6379
+
+    urlparse correctly splits this into:
+        hostname = redis.railway.internal
+        port     = 6379
+        password = PASSWORD   (not "default:PASSWORD")
+
+    Previously we used manual string splitting which incorrectly included
+    the username ("default") as part of the password, causing AuthenticationError.
+    """
+    parsed = urlparse(settings.REDIS_URL)
+    return RedisSettings(
+        host     = parsed.hostname or "localhost",
+        port     = parsed.port or 6379,
+        password = parsed.password or None,   # None = no auth (local dev)
+        database = int(parsed.path.lstrip("/")) if parsed.path and parsed.path != "/" else 0,
+    )
 
 
 # ── Job functions ─────────────────────────────────────────────────────────────
