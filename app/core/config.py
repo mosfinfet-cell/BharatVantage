@@ -1,7 +1,14 @@
 """
 config.py — Application settings loaded from environment variables.
+
+CORS note: Railway env vars are plain strings, not JSON lists.
+ALLOWED_ORIGINS accepts either:
+  - A comma-separated string: "http://localhost:3000,https://bharatvantage.vercel.app"
+  - A JSON array string:      '["http://localhost:3000"]'
+The validator below handles both formats so Railway and local .env both work.
 """
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import List
 import json
 
@@ -28,8 +35,23 @@ class Settings(BaseSettings):
     R2_BUCKET_NAME: str = "bharatvantage-uploads"
     R2_PUBLIC_URL: str = ""   # optional CDN URL
 
-    # CORS
+    # CORS — comma-separated string in Railway env vars
+    # e.g. ALLOWED_ORIGINS=http://localhost:3000,https://bharatvantage.vercel.app
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def parse_origins(cls, v):
+        # Already a list (e.g. from default or test injection)
+        if isinstance(v, list):
+            return v
+        # JSON array string: '["http://localhost:3000"]'
+        if isinstance(v, str) and v.startswith("["):
+            return json.loads(v)
+        # Comma-separated string: "http://localhost:3000,https://foo.vercel.app"
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
 
     # Upload limits
     MAX_FILE_SIZE_MB: int = 200
