@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design Tokens ────────────────────────────────────────────── */
+:root {
+  --saffron:        #f97d0a;
+  --saffron-glow:   rgba(249, 125, 10, 0.4);
+  --saffron-subtle: rgba(249, 125, 10, 0.08);
+  --amber:          #fbbf24;
+  --coral:          #fb7185;
+
+  /* Light surfaces */
+  --bg-base:        #fafaf8;
+  --bg-elevated:    #ffffff;
+  --bg-subtle:      #f5f4f0;
+  --border:         rgba(0,0,0,0.08);
+  --border-strong:  rgba(0,0,0,0.14);
+
+  /* Text */
+  --text-primary:   #0f0e0d;
+  --text-secondary: #6b6659;
+  --text-muted:     #9c9584;
+
+  --radius-card: 16px;
+  --radius-btn:  10px;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+  --shadow-elevated: 0 8px 32px rgba(0,0,0,0.08);
+}
+
+.dark {
+  --bg-base:        #0f0e0d;
+  --bg-elevated:    #1a1917;
+  --bg-subtle:      #141412;
+  --border:         rgba(255,255,255,0.07);
+  --border-strong:  rgba(255,255,255,0.12);
+
+  --text-primary:   #f5f0e8;
+  --text-secondary: #9c9584;
+  --text-muted:     #6b6659;
+
+  --shadow-card:    0 1px 3px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.2);
+  --shadow-elevated: 0 8px 40px rgba(0,0,0,0.4);
+}
+
+/* ── Base ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  font-family: 'DM Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  transition: background 0.2s, color 0.2s;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--saffron); }
+
+/* ── Saffron Glow Effects ─────────────────────────────────────── */
+.glow-saffron {
+  box-shadow: 0 0 0 1px var(--saffron-glow), 0 0 20px var(--saffron-glow);
+}
+.glow-saffron-sm {
+  box-shadow: 0 0 0 1px rgba(249,125,10,0.2), 0 0 12px rgba(249,125,10,0.2);
+}
+.text-glow {
+  text-shadow: 0 0 20px var(--saffron-glow);
+}
+
+/* ── Gradient Mesh Background ─────────────────────────────────── */
+.mesh-bg {
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(249,125,10,0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 100%, rgba(251,191,36,0.05) 0%, transparent 50%);
+}
+
+.dark .mesh-bg {
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(249,125,10,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 100%, rgba(251,146,36,0.06) 0%, transparent 50%);
+}
+
+/* ── Shimmer Skeleton ─────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    var(--bg-subtle) 50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
+}
+
+/* ── Card ─────────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.card-interactive {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.card-interactive:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-elevated);
+  border-color: var(--border-strong);
+}
+
+/* ── Saffron Gradient Text ────────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, #f97d0a 0%, #fbbf24 50%, #fb923c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ── Metric Badge States ──────────────────────────────────────── */
+.badge-complete {
+  background: rgba(34,197,94,0.12);
+  color: #22c55e;
+  border: 1px solid rgba(34,197,94,0.2);
+}
+.badge-estimated {
+  background: rgba(249,125,10,0.12);
+  color: #f97d0a;
+  border: 1px solid rgba(249,125,10,0.2);
+}
+.badge-locked {
+  background: rgba(156,149,132,0.12);
+  color: #9c9584;
+  border: 1px solid rgba(156,149,132,0.2);
+}
+
+/* ── Input focus ring ─────────────────────────────────────────── */
+.input-saffron:focus {
+  outline: none;
+  border-color: var(--saffron);
+  box-shadow: 0 0 0 3px rgba(249,125,10,0.15);
+}
+
+/* ── Geometric Pattern (subtle) ──────────────────────────────── */
+.geo-pattern {
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 20px,
+      rgba(249,125,10,0.02) 20px,
+      rgba(249,125,10,0.02) 21px
+    );
+}
+
+/* ── Upload Drop Zone ─────────────────────────────────────────── */
+.drop-zone-active {
+  border-color: var(--saffron) !important;
+  background: var(--saffron-subtle) !important;
+  box-shadow: 0 0 0 3px rgba(249,125,10,0.15);
+}
+
+/* ── Transitions ──────────────────────────────────────────────── */
+.transition-all-smooth {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Recharts overrides ───────────────────────────────────────── */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 10px !important;
+  box-shadow: var(--shadow-elevated) !important;
+}
