@@ -30,8 +30,8 @@ class Organization(Base):
 
     id          = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     name        = Column(String(255), nullable=False)
-    industry    = Column(SAEnum(Industry), nullable=False, default=Industry.GENERIC)
-    plan        = Column(SAEnum(Plan), nullable=False, default=Plan.FREE)
+    industry    = Column(SAEnum(Industry, values_callable=lambda x: [e.value for e in x]), nullable=False, default=Industry.GENERIC)
+    plan        = Column(SAEnum(Plan, values_callable=lambda x: [e.value for e in x]), nullable=False, default=Plan.FREE)
     created_at  = Column(DateTime, default=datetime.utcnow)
     deleted_at  = Column(DateTime, nullable=True)
 
