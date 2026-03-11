@@ -29,6 +29,10 @@ from app.models.org import Organization, User, Outlet, PlatformConfig, Industry,
 # ── Seed defaults ──────────────────────────────────────────────────────────────
 # These values are stable across dev machines so fixture CSVs can reference
 # the same outlet_id without regenerating.
+import app.models.ingestion     # noqa: F401
+import app.models.records       # noqa: F401
+import app.models.metrics       # noqa: F401
+import app.models.refresh_tokens  # noqa: F401
 SEED_ORG_ID     = "00000000-0000-0000-0000-000000000001"
 SEED_USER_ID    = "00000000-0000-0000-0000-000000000002"
 SEED_OUTLET_ID  = "00000000-0000-0000-0000-000000000003"
