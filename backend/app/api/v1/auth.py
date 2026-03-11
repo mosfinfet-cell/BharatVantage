@@ -15,28 +15,28 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, Cookie
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 import re
 
-# Permissive email validator — accepts .local, .internal, custom TLDs.
-# pydantic EmailStr rejects valid internal/dev domains which breaks seeding and testing.
-_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+')
+# Use a permissive email validator instead of pydantic EmailStr.
+# EmailStr rejects valid internal domains like .local, .internal, .test.
+# Our validator accepts any user@domain.tld format including custom TLDs.
+# Pydantic v2 compatible email validator.
+# __get_validators__ is removed in v2 — use Annotated + BeforeValidator instead.
+from typing import Annotated, Optional
+from pydantic import BeforeValidator
 
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
-class Email(str):
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
+def _validate_email(v: str) -> str:
+    if not isinstance(v, str):
+        raise ValueError('email must be a string')
+    v = v.strip().lower()
+    if not _EMAIL_RE.match(v):
+        raise ValueError('invalid email format')
+    return v
 
-    @classmethod
-    def validate(cls, v):
-        if not isinstance(v, str):
-            raise ValueError('email must be a string')
-        v = v.strip().lower()
-        if not _EMAIL_RE.match(v):
-            raise ValueError('invalid email format')
-        return cls(v)
-from typing import Optional
+Email = Annotated[str, BeforeValidator(_validate_email)]
 
 from app.core.database import get_db
 from app.core.auth import (
