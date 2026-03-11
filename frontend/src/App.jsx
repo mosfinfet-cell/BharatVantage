@@ -13,20 +13,22 @@ import DashboardPage from '@/pages/DashboardPage'
 import UploadPage    from '@/pages/UploadPage'
 import SettingsPage  from '@/pages/SettingsPage'
 import MetricsPage   from '@/pages/MetricsPage'
+import LandingPage   from '@/pages/LandingPage'
 import AppLayout     from '@/components/layout/AppLayout'
 
-// Protected route — redirects to /login if not authenticated
+// Protected route — unauthenticated users see landing page
 function Protected({ children }) {
   const { isLoggedIn } = useAuth()
   const location = useLocation()
-  if (!isLoggedIn) return <Navigate to="/login" state={{ from: location }} replace />
+  if (!isLoggedIn) return <Navigate to="/landing" state={{ from: location }} replace />
   return children
 }
 
 function AppRoutes() {
   return (
     <Routes>
-      {/* Public */}
+      {/* Public — landing page at root for unauthenticated users */}
+      <Route path="/landing" element={<LandingPage />} />
       <Route path="/login"    element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
@@ -43,8 +45,8 @@ function AppRoutes() {
         <Route path="settings"            element={<SettingsPage />} />
       </Route>
 
-      {/* Catch-all */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      {/* Catch-all — unauthenticated users see landing, authenticated see dashboard */}
+      <Route path="*" element={<LandingPage />} />
     </Routes>
   )
 }
