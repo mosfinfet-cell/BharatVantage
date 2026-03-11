@@ -15,7 +15,27 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, Cookie
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
+import re
+
+# Permissive email validator — accepts .local, .internal, custom TLDs.
+# pydantic EmailStr rejects valid internal/dev domains which breaks seeding and testing.
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+')
+
+
+class Email(str):
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v):
+        if not isinstance(v, str):
+            raise ValueError('email must be a string')
+        v = v.strip().lower()
+        if not _EMAIL_RE.match(v):
+            raise ValueError('invalid email format')
+        return cls(v)
 from typing import Optional
 
 from app.core.database import get_db
@@ -38,7 +58,7 @@ REFRESH_COOKIE = "bv_refresh"
 # ── Request / response models ─────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
-    email:     EmailStr
+    email:     Email
     password:  str
     full_name: str
     org_name:  str
@@ -46,7 +66,7 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email:    EmailStr
+    email:    Email
     password: str
 
 
