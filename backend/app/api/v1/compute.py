@@ -23,7 +23,7 @@ from app.core.jobs import get_arq_pool
 from app.models.ingestion import UploadSession
 from app.models.metrics import MetricSnapshot
 from app.models.org import Outlet
-from app.models.records import ManualEntry
+from app.models.ingestion import ManualEntry
 
 compute_router = APIRouter()
 status_router  = APIRouter()
