@@ -13,6 +13,20 @@
 
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
 
+// ── Token store (sessionStorage) ──────────────────────────────────────────
+// Used by AuthContext to persist token and outletId across page refreshes.
+export const tokenStore = {
+  getToken:     ()  => sessionStorage.getItem('bv_token'),
+  setToken:     (t) => sessionStorage.setItem('bv_token', t),
+  clearToken:   ()  => sessionStorage.removeItem('bv_token'),
+  getOutlet:    ()  => sessionStorage.getItem('bv_outlet_id'),
+  setOutlet:    (id)=> sessionStorage.setItem('bv_outlet_id', id),
+  clearOutlet:  ()  => sessionStorage.removeItem('bv_outlet_id'),
+  clear:        ()  => { sessionStorage.removeItem('bv_token'); sessionStorage.removeItem('bv_outlet_id'); },
+};
+
+
+
 // ── Core request helper ────────────────────────────────────────────────────
 async function request(method, path, body = null, token = null, outletId = null) {
   const headers = { "Content-Type": "application/json" };
