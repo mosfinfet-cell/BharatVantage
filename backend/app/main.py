@@ -14,7 +14,7 @@ from app.api.v1.upload  import router as upload_router
 from app.api.v1.config  import router as config_router
 from app.api.v1.actions import router as actions_router
 from app.api.v1.compute import (
-    compute_router, status_router, metrics_router
+    compute_router, status_router, metrics_router, manual_router
 )
 
 # Configure structured logging before anything else logs
@@ -77,6 +77,7 @@ app.include_router(actions_router, prefix=PREFIX,              tags=["Actions"])
 app.include_router(compute_router, prefix=PREFIX,              tags=["Compute"])
 app.include_router(status_router,  prefix=PREFIX,              tags=["Status"])
 app.include_router(metrics_router, prefix=PREFIX,              tags=["Metrics"])
+app.include_router(manual_router,  prefix=PREFIX,              tags=["Manual Entries"])
 
 
 # ── Health checks ──────────────────────────────────────────────────────────────
