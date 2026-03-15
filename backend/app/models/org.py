@@ -124,8 +124,6 @@ class Outlet(Base):
                                       cascade="all, delete-orphan")
     item_master        = relationship("ItemMaster",        back_populates="outlet",
                                       cascade="all, delete-orphan")
-    stock_entries      = relationship("StockEntry",        back_populates="outlet",
-                                      cascade="all, delete-orphan")
     manual_entries     = relationship("ManualEntry",       back_populates="outlet",
                                       cascade="all, delete-orphan")
 

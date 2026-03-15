@@ -180,22 +180,3 @@ class ManualEntry(Base):
         {"extend_existing": True},
     )
 
-
-class StockEntry(Base):
-    __tablename__ = "stock_entries"
-
-    id         = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    outlet_id  = Column(UUID(as_uuid=False), ForeignKey("outlets.id"), nullable=False)
-    item_name  = Column(String(255), nullable=False)
-    entry_date = Column(DateTime,    nullable=False)
-    entry_type = Column(String(20),  nullable=False)
-    quantity   = Column(Float,       nullable=True)
-    unit       = Column(String(50),  nullable=True)
-    unit_cost  = Column(Float,       nullable=True)
-    created_at = Column(DateTime,    default=datetime.utcnow)
-
-    outlet = relationship("Outlet", back_populates="stock_entries")
-
-    __table_args__ = (
-        {"extend_existing": True},
-    )
