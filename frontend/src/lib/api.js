@@ -1,155 +1,210 @@
-// lib/api.js — All HTTP calls to BharatVantage backend.
-//
-// Auth pattern (matches backend exactly):
-//   - Authorization: Bearer <access_token>   ← from JWT
-//   - X-Outlet-ID: <outlet_uuid>             ← per-request outlet scope
-//
-// Base URL points to Railway deployment.
-// In dev, Vite proxies /api → Railway so CORS is not an issue.
+/**
+ * api.js — BharatVantage v1.1 HTTP client.
+ *
+ * All calls include:
+ *   Authorization: Bearer <access_token>  (from AuthContext)
+ *   X-Outlet-ID: <outlet_uuid>            (from AuthContext)
+ *
+ * New in v1.1:
+ *   - manual entries (cash drawer + platform rating)
+ *   - CA export endpoint
+ *   - updated metrics response shape
+ */
 
-const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
+const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
 
-// ── Token storage (in-memory + sessionStorage for reload) ────────
-// We deliberately avoid localStorage to follow the secure token
-// storage pattern. Access token lives in memory; refresh token
-// is stored as httpOnly cookie by the backend.
-let _accessToken = sessionStorage.getItem('bv_access_token') || null
-let _outletId    = sessionStorage.getItem('bv_outlet_id')    || null
+// ── Core request helper ────────────────────────────────────────────────────
+async function request(method, path, body = null, token = null, outletId = null) {
+  const headers = { "Content-Type": "application/json" };
+  if (token)    headers["Authorization"]  = `Bearer ${token}`;
+  if (outletId) headers["X-Outlet-ID"]    = outletId;
 
-export const tokenStore = {
-  setToken:    (t) => { _accessToken = t; sessionStorage.setItem('bv_access_token', t) },
-  getToken:    ()  => _accessToken,
-  clearToken:  ()  => { _accessToken = null; sessionStorage.removeItem('bv_access_token') },
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
 
-  setOutlet:   (id) => { _outletId = id; sessionStorage.setItem('bv_outlet_id', id) },
-  getOutlet:   ()   => _outletId,
-  clearOutlet: ()   => { _outletId = null; sessionStorage.removeItem('bv_outlet_id') },
+  const res = await fetch(`${BASE}${path}`, opts);
 
-  clear: () => {
-    tokenStore.clearToken()
-    tokenStore.clearOutlet()
-  }
-}
-
-// ── Core fetch wrapper ───────────────────────────────────────────
-async function request(path, options = {}) {
-  const headers = {
-    'Content-Type': 'application/json',
-    ...options.headers,
-  }
-
-  // Attach Bearer token if available
-  const token = tokenStore.getToken()
-  if (token) headers['Authorization'] = `Bearer ${token}`
-
-  // Attach outlet context if available
-  const outletId = tokenStore.getOutlet()
-  if (outletId) headers['X-Outlet-ID'] = outletId
-
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers,
-    credentials: 'include', // needed for refresh token cookie
-  })
-
-  // 401 → clear session and redirect to login
-  if (res.status === 401) {
-    tokenStore.clear()
-    window.location.href = '/login'
-    return
+  // 202 Accepted = not ready yet (not an error)
+  if (res.status === 202) {
+    const data = await res.json().catch(() => ({}));
+    return { __status: 202, ...data };
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Request failed' }))
-    throw new Error(
-      typeof err.detail === 'string'
-        ? err.detail
-        : JSON.stringify(err.detail)
-    )
+    const err = await res.json().catch(() => ({ detail: "Unknown error" }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
   }
 
-  // 204 No Content
-  if (res.status === 204) return null
-  return res.json()
+  return res.json();
 }
 
-// ── Auth ─────────────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────
 export const auth = {
-  login: (email, password) =>
-    request('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    }),
+  register: (body) =>
+    request("POST", "/auth/register", body),
 
-  register: (email, password, fullName) =>
-    request('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ email, password, full_name: fullName }),
-    }),
+  login: (email, password) =>
+    request("POST", "/auth/login", { email, password }),
 
   refresh: () =>
-    request('/auth/refresh', { method: 'POST' }),
+    request("POST", "/auth/refresh"),
 
-  logout: () =>
-    request('/auth/logout', { method: 'POST' }),
-}
+  logout: (token) =>
+    request("POST", "/auth/logout", null, token),
+};
 
-// ── Upload ───────────────────────────────────────────────────────
+// ── Config (outlets) ──────────────────────────────────────────────────────
+export const config = {
+  listOutlets: (token) =>
+    request("GET", "/config/outlets", null, token),
+
+  createOutlet: (token, body) =>
+    request("POST", "/config/outlets", body, token),
+
+  /**
+   * Update outlet config — packaging tiers, outlet_type, etc.
+   * body: { outlet_type?, packaging_cost_tier1?, packaging_cost_tier2?,
+   *         packaging_cost_tier3?, packaging_configured?, gst_rate_pct?,
+   *         monthly_rent?, monthly_utilities?, seat_count? }
+   */
+  updateOutlet: (token, outletId, body) =>
+    request("PATCH", `/config/outlets/${outletId}`, body, token),
+};
+
+// ── Upload ────────────────────────────────────────────────────────────────
 export const upload = {
-  // multipart/form-data — do NOT set Content-Type, browser sets boundary
-  uploadFiles: (files) => {
-    const formData = new FormData()
-    files.forEach(f => formData.append('files', f))
+  /**
+   * Upload a file. Returns { session_id, status: 'queued' }.
+   * Uses FormData — does NOT use the JSON request helper.
+   */
+  uploadFile: async (token, outletId, file) => {
+    const form = new FormData();
+    form.append("file", file);
 
-    const token   = tokenStore.getToken()
-    const outletId = tokenStore.getOutlet()
-    const headers = {}
-    if (token)    headers['Authorization'] = `Bearer ${token}`
-    if (outletId) headers['X-Outlet-ID']   = outletId
+    const res = await fetch(`${BASE}/upload`, {
+      method:  "POST",
+      headers: {
+        Authorization:  `Bearer ${token}`,
+        "X-Outlet-ID":  outletId,
+      },
+      body: form,
+    });
 
-    return fetch(`${BASE_URL}/upload`, {
-      method: 'POST',
-      headers,
-      body: formData,
-      credentials: 'include',
-    }).then(async res => {
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Upload failed' }))
-        throw new Error(err.detail || 'Upload failed')
-      }
-      return res.json()
-    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
   },
 
-  confirmSession: (sessionId, confirmations) =>
-    request(`/upload/${sessionId}/confirm`, {
-      method: 'PATCH',
-      body: JSON.stringify({ confirmations }),
-    }),
-}
+  confirm: (token, outletId, sessionId) =>
+    request("PATCH", `/upload/${sessionId}/confirm`, null, token, outletId),
+};
 
-// ── Compute ──────────────────────────────────────────────────────
+// ── Compute & Metrics ─────────────────────────────────────────────────────
 export const compute = {
-  triggerCompute: (sessionId) =>
-    request(`/compute/${sessionId}`, { method: 'POST' }),
+  /** Enqueue compute job. Returns { session_id, job_id, status }. */
+  enqueue: (token, outletId, sessionId) =>
+    request("POST", `/compute/${sessionId}`, null, token, outletId),
 
-  getStatus: (sessionId) =>
-    request(`/status/${sessionId}`),
+  /** Poll session status. Returns { ready, compute_status, ingest_status, ... }. */
+  getStatus: (token, outletId, sessionId) =>
+    request("GET", `/status/${sessionId}`, null, token, outletId),
 
-  getMetrics: (sessionId) =>
-    request(`/metrics/${sessionId}`),
-}
+  /**
+   * Fetch computed metrics for a session.
+   *
+   * Returns v1.1 shape:
+   * {
+   *   session_id, computed_at, schema_version, is_stale,
+   *   outlet_type,  // 'dine_in' | 'hybrid' | 'cloud_kitchen'
+   *   period_start, period_end,
+   *   sufficiency:  { metric_key: 'complete'|'estimated'|'locked'|'partial' },
+   *   alerts:       [ { priority, metric, message, color } ],
+   *   metrics: {
+   *     // Layer 1 (hybrid/shared)
+   *     total_earnings, staff_cost_pct, prime_cost_pct, kitchen_conflict_days,
+   *     channel_comparison,
+   *     // Dine-in tab
+   *     dine_in: { today_earnings, cash_reconciliation, avg_bill_per_table, ... },
+   *     // Online tab
+   *     online: { pending_settlements, payout_bridge, platform_earnings,
+   *               true_order_margin, penalties, ad_spend_efficiency,
+   *               item_channel_margin, packaging_cost_config },
+   *     // CA Export
+   *     ca_export: { completeness, gst_on_sales, ... }
+   *   }
+   * }
+   */
+  getMetrics: (token, outletId, sessionId) =>
+    request("GET", `/metrics/${sessionId}`, null, token, outletId),
+};
 
-// ── Config ───────────────────────────────────────────────────────
-export const config = {
-  getConfig: () =>
-    request('/config'),
+// ── Manual Entries ────────────────────────────────────────────────────────
+export const manualEntry = {
+  /**
+   * Create a manual entry.
+   * @param {string} entryType  'cash_drawer' | 'platform_rating'
+   * @param {string} entryDate  'YYYY-MM-DD'
+   * @param {number} value      ₹ amount (cash) OR rating float 1.0–5.0
+   * @param {string} platform   'swiggy' | 'zomato' — required for ratings
+   */
+  create: (token, outletId, { entryType, entryDate, value, platform = null }) =>
+    request("POST", "/manual-entry", {
+      entry_type: entryType,
+      entry_date: entryDate,
+      value,
+      platform,
+    }, token, outletId),
 
-  updateConfig: (data) =>
-    request('/config', { method: 'PUT', body: JSON.stringify(data) }),
-}
+  /**
+   * List manual entries. Optional filter by entryType.
+   * Returns last 90 entries ordered by entry_date desc.
+   */
+  list: (token, outletId, entryType = null) => {
+    const qs = entryType ? `?entry_type=${entryType}` : "";
+    return request("GET", `/manual-entries${qs}`, null, token, outletId);
+  },
+};
 
-// ── Health ───────────────────────────────────────────────────────
+// ── Actions ───────────────────────────────────────────────────────────────
+export const actions = {
+  /**
+   * Raise a dispute for recoverable penalties.
+   * Generates a structured dispute list matching platform portal format.
+   * @param {Array} orders  Array of { id, date, platform, amount, reason }
+   */
+  raiseDispute: (token, outletId, { sessionId, orders }) =>
+    request("POST", "/actions/dispute", {
+      session_id: sessionId,
+      orders,
+    }, token, outletId),
+
+  /**
+   * Export CA GST Reconciliation Report.
+   * @param {string} format  'pdf' | 'csv'
+   */
+  exportCA: (token, outletId, { sessionId, format = "pdf" }) =>
+    request("POST", "/actions/export", {
+      export_type: "gst_reconciliation",
+      session_id:  sessionId,
+      format,
+    }, token, outletId),
+
+  /** Check export status / get download URL. */
+  getExport: (token, outletId, exportId) =>
+    request("GET", `/actions/export/${exportId}`, null, token, outletId),
+
+  /** Flag a shift for manager review. */
+  flagShift: (token, outletId, { sessionId, shiftLabel, reason }) =>
+    request("POST", "/actions/flag-shift", {
+      session_id:  sessionId,
+      shift_label: shiftLabel,
+      reason,
+    }, token, outletId),
+};
+
+// ── Health ────────────────────────────────────────────────────────────────
 export const health = {
-  check: () => fetch('/api/v1/health/ready').then(r => r.json()),
-}
+  check: () => fetch(`${BASE.replace("/api/v1", "")}/health`).then(r => r.json()),
+};
