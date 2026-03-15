@@ -156,27 +156,3 @@ class ItemMaster(Base):
         {"extend_existing": True},
     )
 
-
-class ManualEntry(Base):
-    """
-    Operator-entered data:
-      cash_drawer    — physical drawer amount for cash reconciliation gap
-      platform_rating — monthly platform rating for rating vs revenue correlation
-    """
-    __tablename__ = "manual_entries"
-
-    id         = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    outlet_id  = Column(UUID(as_uuid=False), ForeignKey("outlets.id"), nullable=False)
-    entry_type = Column(String(50),  nullable=False)
-    entry_date = Column(DateTime,    nullable=False)
-    platform   = Column(String(30),  nullable=True)
-    value      = Column(Float,       nullable=False)
-    created_at = Column(DateTime,    default=datetime.utcnow)
-
-    outlet = relationship("Outlet", back_populates="manual_entries")
-
-    __table_args__ = (
-        Index("ix_manual_outlet_type_date", "outlet_id", "entry_type", "entry_date"),
-        {"extend_existing": True},
-    )
-

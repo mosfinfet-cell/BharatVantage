@@ -82,20 +82,20 @@ class SourceFile(Base):
 
 class ManualEntry(Base):
     """
-    Immutable manual cost entries. Never updated — new row per correction.
-    Used when Tally/payroll files are not available.
+    Operator-entered data for v1.1 metrics.
+    entry_type = 'cash_drawer'    → value = physical drawer amount (₹) for that date
+    entry_type = 'platform_rating' → value = rating (1.0-5.0), platform = swiggy|zomato
     """
     __tablename__ = "manual_entries"
+    __table_args__ = {"extend_existing": True}
 
-    id           = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
-    outlet_id    = Column(UUID(as_uuid=False), ForeignKey("outlets.id"), nullable=False, index=True)
-    entry_type   = Column(String(50), nullable=False)   # cogs | labor | ad_spend | penalties
-    period_from  = Column(DateTime, nullable=False)
-    period_to    = Column(DateTime, nullable=False)
-    amount       = Column(Float, nullable=False)
-    notes        = Column(Text, nullable=True)
-    entered_by   = Column(UUID(as_uuid=False), nullable=True)   # user_id
-    created_at   = Column(DateTime, default=datetime.utcnow)
+    id         = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    outlet_id  = Column(UUID(as_uuid=False), ForeignKey("outlets.id"), nullable=False, index=True)
+    entry_type = Column(String(50),  nullable=False)   # cash_drawer | platform_rating
+    entry_date = Column(DateTime,    nullable=False)
+    platform   = Column(String(30),  nullable=True)    # swiggy|zomato — for ratings only
+    value      = Column(Float,       nullable=False)
+    created_at = Column(DateTime,    default=datetime.utcnow)
 
     outlet = relationship("Outlet", back_populates="manual_entries")
 
