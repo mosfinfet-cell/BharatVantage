@@ -117,4 +117,4 @@ class StockEntry(Base):
     notes                = Column(Text, nullable=True)
     created_at           = Column(DateTime, default=datetime.utcnow)
 
-    outlet = relationship("Outlet", back_populates="stock_entries")
+    outlet = relationship("Outlet", foreign_keys=[outlet_id])
