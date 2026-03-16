@@ -289,3 +289,36 @@ async def confirm_sources(
         confirmed         = confirmed_results,
         ready_to_compute  = ready,
     )
+
+
+@router.get("/upload/sessions")
+async def list_sessions(
+    outlet: Outlet       = Depends(get_current_outlet),
+    db:     AsyncSession = Depends(get_db),
+):
+    """List all upload sessions for the current outlet, newest first."""
+    from sqlalchemy import select, desc
+    from app.models.ingestion import UploadSession
+    result = await db.execute(
+        select(UploadSession)
+        .where(
+            UploadSession.outlet_id == str(outlet.id),
+            UploadSession.deleted_at.is_(None),
+        )
+        .order_by(desc(UploadSession.created_at))
+        .limit(20)
+    )
+    sessions = result.scalars().all()
+    return [
+        {
+            "id":             s.id,
+            "ingest_status":  s.ingest_status,
+            "compute_status": s.compute_status,
+            "sources_present": list(s.source_coverage.keys()) if s.source_coverage else [],
+            "date_from":      s.date_from.isoformat()  if s.date_from  else None,
+            "date_to":        s.date_to.isoformat()    if s.date_to    else None,
+            "created_at":     s.created_at.isoformat() if s.created_at else None,
+            "error_message":  s.error_message,
+        }
+        for s in sessions
+    ]
