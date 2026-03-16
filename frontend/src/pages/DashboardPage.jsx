@@ -1,97 +1,34 @@
-// pages/DashboardPage.jsx
-//
-// Reasoning: Dashboard is the homepage post-login. It shows:
-// 1. Summary stats across sessions
-// 2. Most recent MetricSnapshot (calls GET /metrics/:sessionId)
-// 3. Quick-access upload CTA if no sessions exist
-// 4. Recent activity timeline
-//
-// For the first load, we poll GET /status/:sessionId if compute is running.
-
+/**
+ * DashboardPage.jsx — v2
+ *
+ * Shows real upload sessions from the API.
+ * Navigates to /metrics/:sessionId for computed sessions.
+ * Shows upload CTA when no sessions exist.
+ */
 import React, { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  Upload, RefreshCw, ArrowRight, TrendingUp, TrendingDown,
-  AlertCircle, CheckCircle, Clock, Zap, FileText, ChevronRight
+  Upload, RefreshCw, ArrowRight, CheckCircle,
+  Clock, AlertCircle, ChevronRight, Zap
 } from 'lucide-react'
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer
-} from 'recharts'
-import { compute as computeApi } from '@/lib/api'
+import { compute as computeApi, upload as uploadApi } from '@/lib/api'
 import { useAuth } from '@/store/AuthContext'
-import MetricCard from '@/components/ui/MetricCard'
-import Button from '@/components/ui/Button'
-import { clsx } from 'clsx'
 
-// ── Mock / demo data for sessions without real metrics ────────────
-// Shown when no session exists yet (empty state onboarding)
-const DEMO_METRICS = {
-  prime_cost_pct:        { value: '61.4', unit: null, suffix: '%', trend: -3.2, trendLabel: 'vs last month', sufficiency: 'complete', insight: 'Below the 65% threshold — healthy prime cost.' },
-  net_revenue:           { value: '₹4.2L', unit: null, suffix: null, trend: 8.1, trendLabel: 'vs last month', sufficiency: 'complete' },
-  swiggy_net_payout:     { value: '₹1.84L', unit: null, suffix: null, trend: -1.2, trendLabel: 'vs last month', sufficiency: 'complete' },
-  zomato_net_payout:     { value: '₹1.12L', unit: null, suffix: null, trend: 5.4, trendLabel: 'vs last month', sufficiency: 'complete' },
-  penalty_total:         { value: '₹8,240', unit: null, suffix: null, trend: -12.3, trendLabel: 'vs last month', sufficiency: 'complete', insight: 'Down ₹1,200 from last month.' },
-  cogs_pct:              { value: '34.2', unit: null, suffix: '%', trend: 1.1, trendLabel: 'vs last month', sufficiency: 'estimated', insight: 'Tally data missing — using fallback 35% estimate.' },
-  labor_cost_pct:        { value: '27.2', unit: null, suffix: '%', trend: -2.4, trendLabel: 'vs last month', sufficiency: 'complete' },
-  inventory_variance_pct:{ value: null, unit: null, suffix: '%', sufficiency: 'locked' },
-}
-
-const METRIC_LABELS = {
-  prime_cost_pct:         'Prime Cost %',
-  net_revenue:            'Net Revenue',
-  swiggy_net_payout:      'Swiggy Net Payout',
-  zomato_net_payout:      'Zomato Net Payout',
-  penalty_total:          'Penalties',
-  cogs_pct:               'COGS %',
-  labor_cost_pct:         'Labor Cost %',
-  inventory_variance_pct: 'Inventory Variance %',
-}
-
-// Mock revenue trend for chart
-const REVENUE_TREND = [
-  { day: 'Mon', revenue: 18200, target: 20000 },
-  { day: 'Tue', revenue: 22400, target: 20000 },
-  { day: 'Wed', revenue: 19800, target: 20000 },
-  { day: 'Thu', revenue: 24100, target: 20000 },
-  { day: 'Fri', revenue: 28600, target: 20000 },
-  { day: 'Sat', revenue: 34200, target: 20000 },
-  { day: 'Sun', revenue: 31500, target: 20000 },
-]
-
-// ── Custom chart tooltip ──────────────────────────────────────────
-function CustomTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null
+// ── Status badge ──────────────────────────────────────────────────
+function StatusBadge({ status }) {
+  const cfg = {
+    done:      { label: 'Ready',      cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', icon: CheckCircle },
+    queued:    { label: 'Queued',     cls: 'bg-blue-500/10    text-blue-400    border-blue-500/20',    icon: Clock },
+    running:   { label: 'Computing',  cls: 'bg-amber-500/10   text-amber-400   border-amber-500/20',   icon: RefreshCw },
+    ingesting: { label: 'Ingesting',  cls: 'bg-blue-500/10    text-blue-400    border-blue-500/20',    icon: RefreshCw },
+    failed:    { label: 'Failed',     cls: 'bg-red-500/10     text-red-400     border-red-500/20',     icon: AlertCircle },
+    pending:   { label: 'Pending',    cls: 'bg-zinc-700/30    text-zinc-400    border-zinc-600/30',    icon: Clock },
+  }[status] || { label: status, cls: 'bg-zinc-700/30 text-zinc-400 border-zinc-600/30', icon: Clock }
+  const Icon = cfg.icon
   return (
-    <div className="card p-3 text-xs font-body min-w-[120px]">
-      <p className="text-[var(--text-muted)] mb-1">{label}</p>
-      {payload.map(p => (
-        <div key={p.dataKey} className="flex items-center justify-between gap-3">
-          <span style={{ color: p.color }}>{p.name}</span>
-          <span className="font-semibold text-[var(--text-primary)]">
-            ₹{p.value.toLocaleString('en-IN')}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Status pill ───────────────────────────────────────────────────
-function StatusPill({ status }) {
-  const config = {
-    done:    { icon: CheckCircle, text: 'Computed',  cls: 'text-emerald-400 bg-emerald-400/10' },
-    running: { icon: RefreshCw,   text: 'Running…',  cls: 'text-saffron-400 bg-saffron-400/10 animate-pulse' },
-    failed:  { icon: AlertCircle, text: 'Failed',    cls: 'text-red-400 bg-red-400/10' },
-    queued:  { icon: Clock,       text: 'Queued',    cls: 'text-blue-400 bg-blue-400/10' },
-    idle:    { icon: Clock,       text: 'Pending',   cls: 'text-[var(--text-muted)] bg-[var(--bg-subtle)]' },
-  }[status] || { icon: Clock, text: status, cls: 'text-[var(--text-muted)] bg-[var(--bg-subtle)]' }
-
-  const Icon = config.icon
-  return (
-    <span className={clsx('flex items-center gap-1.5 text-xs font-body font-medium px-2.5 py-1 rounded-full', config.cls)}>
+    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${cfg.cls}`}>
       <Icon size={11} />
-      {config.text}
+      {cfg.label}
     </span>
   )
 }
@@ -99,215 +36,232 @@ function StatusPill({ status }) {
 // ── Empty state ───────────────────────────────────────────────────
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-saffron-500/10 border border-saffron-500/20 flex items-center justify-center mb-5">
-        <FileText size={28} className="text-saffron-500" />
+    <div className="flex flex-col items-center justify-center py-24 gap-6 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-[var(--saffron-subtle)] flex items-center justify-center">
+        <Upload size={28} className="text-[var(--saffron)]" />
       </div>
-      <h3 className="text-lg font-display font-semibold text-[var(--text-primary)] mb-2">
-        No data yet
-      </h3>
-      <p className="text-sm text-[var(--text-secondary)] font-body max-w-xs mb-6 leading-relaxed">
-        Upload your Swiggy, Zomato, or Tally exports to get restaurant-grade analytics
-      </p>
-      <Link to="/upload">
-        <Button icon={<Upload size={16} />} size="lg">
-          Upload your first file
-        </Button>
+      <div>
+        <h2 className="text-xl font-bold font-display mb-2">No data uploaded yet</h2>
+        <p className="text-sm text-[var(--text-secondary)] max-w-sm">
+          Upload your Swiggy, Zomato, Petpooja, or Tally files to see your restaurant analytics.
+        </p>
+      </div>
+      <Link to="/upload"
+        className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm
+          bg-[var(--saffron)] text-[var(--bg-base)] hover:opacity-90 transition-opacity">
+        Upload your first file
+        <ArrowRight size={15} />
       </Link>
     </div>
   )
 }
 
-export default function DashboardPage() {
-  const { outletId } = useAuth()
-  const navigate     = useNavigate()
+// ── Session card ──────────────────────────────────────────────────
+function SessionCard({ session, onCompute, computing }) {
+  const navigate = useNavigate()
+  const isReady    = session.compute_status === 'done'
+  const isFailed   = session.compute_status === 'failed' || session.ingest_status === 'failed'
+  const isRunning  = ['queued','running','ingesting'].includes(session.compute_status) ||
+                     ['queued','running'].includes(session.ingest_status)
 
-  // For demo purposes: show demo data always.
-  // In production: load real sessions and metrics from API.
-  const [sessionId]   = useState('demo')        // would come from API in production
-  const [metrics]     = useState(DEMO_METRICS)
-  const [hasData]     = useState(true)           // flip to false to see empty state
-  const [computeStatus] = useState('done')
-
-  const now = new Date()
-  const dateRange = `1 Mar – 31 Mar ${now.getFullYear()}`
+  const sources = session.sources_present || []
+  const dateFrom = session.date_from ? new Date(session.date_from).toLocaleDateString('en-IN', { day:'numeric', month:'short' }) : '—'
+  const dateTo   = session.date_to   ? new Date(session.date_to).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '—'
 
   return (
-    <div className="p-6 md:p-8 max-w-[1400px] mx-auto">
-
-      {/* ── Page header ──────────────────────────────────────── */}
-      <div className="flex items-start justify-between mb-8 gap-4 flex-wrap animate-fade-in">
-        <div>
-          <h1 className="text-2xl font-display font-bold text-[var(--text-primary)]">
-            Dashboard
-          </h1>
-          <p className="text-sm text-[var(--text-secondary)] font-body mt-0.5">
-            Main Outlet — Koregaon Park &nbsp;·&nbsp;
-            <span className="text-[var(--text-muted)]">{dateRange}</span>
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          <StatusPill status={computeStatus} />
-          <Link to="/upload">
-            <Button variant="secondary" icon={<Upload size={15} />} size="sm">
-              New upload
-            </Button>
-          </Link>
-        </div>
-      </div>
-
-      {!hasData ? (
-        <EmptyState />
-      ) : (
-        <>
-          {/* ── KPI summary row ──────────────────────────────── */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            {['prime_cost_pct', 'net_revenue', 'penalty_total', 'labor_cost_pct'].map((key, i) => {
-              const m = metrics[key]
-              return (
-                <MetricCard
-                  key={key}
-                  label={METRIC_LABELS[key]}
-                  value={m.value}
-                  unit={m.unit}
-                  suffix={m.suffix}
-                  trend={m.trend}
-                  trendLabel={m.trendLabel}
-                  sufficiency={m.sufficiency}
-                  insight={m.insight}
-                  style={{ animationDelay: `${i * 60}ms` }}
-                  onClick={() => navigate(`/metrics/demo`)}
-                />
-              )
-            })}
-          </div>
-
-          {/* ── Revenue trend chart ──────────────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-            {/* Chart — 2/3 width */}
-            <div className="lg:col-span-2 card p-5 animate-slide-up" style={{ animationDelay: '120ms' }}>
-              <div className="flex items-center justify-between mb-5">
-                <div>
-                  <h3 className="text-sm font-display font-semibold text-[var(--text-primary)]">
-                    Daily Revenue
-                  </h3>
-                  <p className="text-xs text-[var(--text-muted)] font-body mt-0.5">
-                    This week vs daily target
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 text-xs font-body">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-saffron-500" />
-                    Revenue
+    <div className="card p-5 flex flex-col gap-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <StatusBadge status={isReady ? 'done' : isFailed ? 'failed' : isRunning ? session.compute_status || 'queued' : 'pending'} />
+            {sources.length > 0 && (
+              <div className="flex gap-1">
+                {sources.map(s => (
+                  <span key={s} className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border)] capitalize">
+                    {s}
                   </span>
-                  <span className="flex items-center gap-1.5 text-[var(--text-muted)]">
-                    <span className="w-2.5 h-2.5 rounded-full border border-[var(--border-strong)]" />
-                    Target
-                  </span>
-                </div>
-              </div>
-
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart data={REVENUE_TREND} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="saffronGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#f97d0a" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#f97d0a" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="targetGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#6b6659" stopOpacity={0.1} />
-                      <stop offset="95%" stopColor="#6b6659" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'DM Sans' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'DM Sans' }} axisLine={false} tickLine={false}
-                    tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'var(--saffron)', strokeWidth: 1, strokeDasharray: '4 2' }} />
-                  <Area type="monotone" dataKey="target" name="Target" stroke="var(--border-strong)" strokeWidth={1.5} fill="url(#targetGrad)" strokeDasharray="4 2" dot={false} />
-                  <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#f97d0a" strokeWidth={2.5} fill="url(#saffronGrad)" dot={false}
-                    activeDot={{ r: 5, fill: '#f97d0a', stroke: 'var(--bg-elevated)', strokeWidth: 2 }} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Channel breakdown — 1/3 width */}
-            <div className="card p-5 flex flex-col animate-slide-up" style={{ animationDelay: '160ms' }}>
-              <h3 className="text-sm font-display font-semibold text-[var(--text-primary)] mb-4">
-                Revenue by Channel
-              </h3>
-              <div className="flex-1 flex flex-col justify-center gap-4">
-                {[
-                  { label: 'Swiggy',   value: 43.8, color: '#f97d0a', amount: '₹1.84L' },
-                  { label: 'Zomato',   value: 26.7, color: '#fb923c', amount: '₹1.12L' },
-                  { label: 'Dine-in',  value: 22.1, color: '#fbbf24', amount: '₹0.93L' },
-                  { label: 'Takeaway', value: 7.4,  color: '#9c9584', amount: '₹0.31L' },
-                ].map(({ label, value, color, amount }) => (
-                  <div key={label}>
-                    <div className="flex justify-between text-xs font-body mb-1.5">
-                      <span className="text-[var(--text-secondary)]">{label}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[var(--text-muted)]">{amount}</span>
-                        <span className="font-semibold" style={{ color }}>{value}%</span>
-                      </div>
-                    </div>
-                    <div className="h-1.5 bg-[var(--bg-subtle)] rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-700"
-                        style={{ width: `${value}%`, background: color }}
-                      />
-                    </div>
-                  </div>
                 ))}
               </div>
-            </div>
+            )}
           </div>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">
+            {dateFrom} → {dateTo}
+          </p>
+        </div>
+        <span className="text-[10px] text-[var(--text-muted)] shrink-0">
+          {new Date(session.created_at || Date.now()).toLocaleDateString('en-IN')}
+        </span>
+      </div>
 
-          {/* ── Remaining metric cards ────────────────────────── */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            {['swiggy_net_payout', 'zomato_net_payout', 'cogs_pct', 'inventory_variance_pct'].map((key, i) => {
-              const m = metrics[key]
-              return (
-                <MetricCard
-                  key={key}
-                  label={METRIC_LABELS[key]}
-                  value={m.value}
-                  unit={m.unit}
-                  suffix={m.suffix}
-                  trend={m.trend}
-                  trendLabel={m.trendLabel}
-                  sufficiency={m.sufficiency}
-                  insight={m.insight}
-                  style={{ animationDelay: `${(i + 4) * 60}ms` }}
-                  onClick={() => navigate('/metrics/demo')}
-                />
-              )
-            })}
-          </div>
+      {/* Actions */}
+      <div className="flex gap-2">
+        {isReady && (
+          <button
+            onClick={() => navigate(`/metrics/${session.id}`)}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl
+              bg-[var(--saffron)] text-[var(--bg-base)] font-semibold text-sm
+              hover:opacity-90 transition-opacity">
+            View Analytics
+            <ChevronRight size={14} />
+          </button>
+        )}
 
-          {/* ── View full metrics CTA ─────────────────────────── */}
-          <div className="card card-interactive p-4 flex items-center justify-between gap-4 animate-fade-in">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-saffron-500/10 border border-saffron-500/20 flex items-center justify-center">
-                <Zap size={16} className="text-saffron-500" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-[var(--text-primary)] font-body">
-                  View full analytics report
-                </p>
-                <p className="text-xs text-[var(--text-muted)] font-body">
-                  Insights, actions, and dispute templates
-                </p>
-              </div>
-            </div>
-            <Link to="/metrics/demo">
-              <Button variant="secondary" size="sm" icon={<ChevronRight size={14} />}>
-                Open report
-              </Button>
-            </Link>
+        {!isReady && !isFailed && !isRunning && session.ingest_status === 'done' && (
+          <button
+            onClick={() => onCompute(session.id)}
+            disabled={computing === session.id}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl
+              bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold text-sm
+              hover:bg-blue-500/20 transition-colors disabled:opacity-50">
+            {computing === session.id ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} />}
+            {computing === session.id ? 'Computing…' : 'Compute Metrics'}
+          </button>
+        )}
+
+        {isRunning && (
+          <div className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl
+            bg-amber-500/10 text-amber-400 border border-amber-500/20 text-sm font-semibold">
+            <RefreshCw size={14} className="animate-spin" />
+            Processing…
           </div>
-        </>
+        )}
+
+        {isFailed && (
+          <div className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl
+            bg-red-500/10 text-red-400 border border-red-500/20 text-sm">
+            <AlertCircle size={14} />
+            Processing failed — try re-uploading
+          </div>
+        )}
+
+        <Link to="/upload"
+          className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl
+            border border-[var(--border)] text-[var(--text-secondary)] text-sm
+            hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-colors">
+          <Upload size={13} />
+          New
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────
+export default function DashboardPage() {
+  const { token, outletId } = useAuth()
+  const navigate = useNavigate()
+  const [sessions,  setSessions]  = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [computing, setComputing] = useState(null)
+  const [error,     setError]     = useState(null)
+
+  const loadSessions = useCallback(async () => {
+    if (!token || !outletId) return
+    try {
+      // Use the upload list endpoint — GET /upload/sessions
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/upload/sessions`,
+        { headers: { Authorization: `Bearer ${token}`, 'X-Outlet-ID': outletId } }
+      )
+      if (res.ok) {
+        const data = await res.json()
+        // Sort by created_at desc
+        const sorted = (Array.isArray(data) ? data : data.sessions || [])
+          .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+        setSessions(sorted)
+      } else if (res.status === 404) {
+        // Endpoint may not exist yet — show empty state
+        setSessions([])
+      }
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [token, outletId])
+
+  useEffect(() => {
+    loadSessions()
+    // Poll every 5s if any session is in-progress
+    const interval = setInterval(() => {
+      if (sessions.some(s =>
+        ['queued','running','ingesting'].includes(s.compute_status) ||
+        ['queued','running'].includes(s.ingest_status)
+      )) {
+        loadSessions()
+      }
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [loadSessions, sessions])
+
+  async function handleCompute(sessionId) {
+    setComputing(sessionId)
+    try {
+      await computeApi.enqueue(token, outletId, sessionId)
+      await loadSessions()
+    } catch (e) {
+      alert('Compute failed: ' + e.message)
+    } finally {
+      setComputing(null)
+    }
+  }
+
+  // If there's exactly one ready session, auto-navigate to its metrics
+  useEffect(() => {
+    const ready = sessions.filter(s => s.compute_status === 'done')
+    if (ready.length === 1 && sessions.length === 1) {
+      navigate(`/metrics/${ready[0].id}`, { replace: true })
+    }
+  }, [sessions, navigate])
+
+  return (
+    <div className="flex flex-col gap-6 p-6 max-w-3xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold font-display">Dashboard</h1>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">
+            Your restaurant analytics sessions
+          </p>
+        </div>
+        <Link to="/upload"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm
+            bg-[var(--saffron)] text-[var(--bg-base)] hover:opacity-90 transition-opacity">
+          <Upload size={14} />
+          Upload data
+        </Link>
+      </div>
+
+      {/* Content */}
+      {loading && (
+        <div className="flex items-center justify-center py-16">
+          <RefreshCw className="animate-spin text-[var(--saffron)]" size={24} />
+        </div>
+      )}
+
+      {!loading && sessions.length === 0 && <EmptyState />}
+
+      {!loading && sessions.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-semibold">
+            {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+          </p>
+          {sessions.map(s => (
+            <SessionCard
+              key={s.id}
+              session={s}
+              onCompute={handleCompute}
+              computing={computing}
+            />
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <div className="card p-4 border border-red-500/20 bg-red-500/5 text-sm text-red-400">
+          Error loading sessions: {error}
+        </div>
       )}
     </div>
   )
