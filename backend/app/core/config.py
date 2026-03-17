@@ -28,10 +28,10 @@ class Settings(BaseSettings):
     # Redis (ARQ)
     REDIS_URL: str = "redis://localhost:6379"
 
-    # Cloudflare R2
+    # Cloudflare R2 / backblaze B2 (S3-compatible storage)
     R2_ACCOUNT_ID: str = ""
     R2_ENDPOINT_URL: str = ""  # override for non-Cloudflare storage (e.g. Backblaze B2)
-    R2_ENDPOINT_URL: str = ""  # override for non-Cloudflare storage (e.g. Backblaze B2)
+    #R2_ENDPOINT_URL: str = ""  # override for non-Cloudflare storage (e.g. Backblaze B2)
     R2_ACCESS_KEY_ID: str = ""
     R2_SECRET_ACCESS_KEY: str = ""
     R2_BUCKET_NAME: str = "bharatvantage-uploads"
