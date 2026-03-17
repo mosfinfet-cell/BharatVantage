@@ -415,7 +415,7 @@ function Footer() {
         <span style={{ fontWeight: 700, color: "#9c9584", fontSize: "0.875rem" }}>BharatVantage</span>
       </div>
       <p style={{ color: "#6b6659", fontSize: "0.8rem" }}>
-        © 2024 BharatVantage · Profit intelligence for Indian restaurants
+        © 2026 BharatVantage · Vantage for Indian restaurants
       </p>
       <div style={{ display: "flex", gap: "1.25rem" }}>
         {["Privacy", "Terms", "Contact"].map(l => (
