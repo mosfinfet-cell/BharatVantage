@@ -11,6 +11,7 @@ from arq import create_pool
 from arq.connections import RedisSettings
 
 from app.core.config import settings
+from app.models.org import Outlet  # noqa: F401 — required for SQLAlchemy relationship resolution
 
 logger = logging.getLogger(__name__)
 
