@@ -161,7 +161,9 @@ def _clean_columns(df: pd.DataFrame) -> pd.DataFrame:
         for c in df.columns
     ]
     # Drop columns with empty or unnamed headers
-    df = df.loc[:, ~df.columns.str.match(r"^(Unnamed|nan|\s*)")]
+    #df = df.loc[:, ~df.columns.str.match(r"^(Unnamed|nan|\s*)")]
+    # FIXED — only drop truly unnamed columns pandas auto-generates
+    df = df.loc[:, ~df.columns.str.match(r'^(Unnamed: \d+|nan)$')]
     return df
 
 
