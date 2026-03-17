@@ -42,19 +42,7 @@ def safe_num(series: pd.Series) -> pd.Series:
     cleaned = series.astype(str).str.replace(r"[₹,\s]", "", regex=True)
     return pd.to_numeric(cleaned, errors="coerce").fillna(0.0)
 
-"""
-def safe_date(series: pd.Series) -> pd.Series:
-    """Parse dates, normalise to IST timezone-aware datetimes."""
-    parsed = pd.to_datetime(series, errors="coerce", dayfirst=True)
-    # Localise naive datetimes to IST
-    def localise(dt):
-        if pd.isna(dt):
-            return None
-        if dt.tzinfo is None:
-            return IST.localize(dt)
-        return dt.astimezone(IST)
-    return parsed.apply(localise)
-"""
+
 def safe_date(series: pd.Series) -> pd.Series:
     """Parse dates, normalise to IST, strip timezone for DB storage."""
     parsed = pd.to_datetime(series, errors="coerce", dayfirst=True)
