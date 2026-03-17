@@ -22,6 +22,7 @@ from app.ingestion.sanitiser import sanitise, validate_file
 from app.ingestion.fingerprint import detect_source
 from app.models.ingestion import UploadSession, SourceFile
 from app.models.org import Outlet
+from app.core.jobs import get_arq_pool
 
 
 router = APIRouter()
@@ -167,7 +168,13 @@ async def upload_files(
         ))
 
     await db.commit()
-
+    # Enqueue ingestion job if all files are auto-confirmed (no manual review needed)
+    if not needs_confirm:
+        pool = await get_arq_pool()
+        await pool.enqueue_job("run_ingestion_job", session_id)
+        session.ingest_status = "queued"
+        await db.commit()
+        
     return UploadSessionResponse(
         session_id    = session_id,
         outlet_id     = str(outlet.id),
