@@ -72,7 +72,7 @@ async def upload_files(
     session    = UploadSession(
         id             = session_id,
         outlet_id      = str(outlet.id),
-        vertical       = outlet.org.industry.value if outlet.org else "restaurant",
+        vertical       = "restaurant",  # industry from org.industry -- skipped to avoid lazy load
         ingest_status  = "pending",
         compute_status = "idle",
         created_at     = datetime.utcnow(),
