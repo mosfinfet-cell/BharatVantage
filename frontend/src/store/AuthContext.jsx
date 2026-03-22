@@ -9,7 +9,7 @@
 // On logout: clear all stored tokens and redirect to /login.
 
 import React, { createContext, useContext, useState, useCallback } from 'react'
-import { auth as authApi, tokenStore } from '@/lib/api'
+import { auth as authApi, config as configApi, tokenStore } from '@/lib/api'
 
 const AuthContext = createContext(null)
 
@@ -32,17 +32,32 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     const data = await authApi.login(email, password)
 
-    // Backend returns: { access_token, token_type, outlet_id }
+    // Store token first — needed for the outlets fetch below
     tokenStore.setToken(data.access_token)
 
     // Decode token to extract user info
     const payload = JSON.parse(atob(data.access_token.split('.')[1]))
     setUser({ userId: payload.sub, orgId: payload.org_id })
 
-    // Use outlet_id from response if provided, otherwise require selection
+    // Backend login response does NOT include outlet_id.
+    // Fetch the org's outlets and auto-select the first one.
+    // This is required so X-Outlet-ID header is always set for subsequent requests.
     if (data.outlet_id) {
+      // Future-proof: use it directly if backend ever adds it to login response
       tokenStore.setOutlet(data.outlet_id)
       setOutletIdState(data.outlet_id)
+    } else {
+      try {
+        const outlets = await configApi.listOutlets(data.access_token)
+        const firstOutlet = Array.isArray(outlets) ? outlets[0] : outlets?.outlets?.[0]
+        if (firstOutlet?.id) {
+          tokenStore.setOutlet(firstOutlet.id)
+          setOutletIdState(firstOutlet.id)
+        }
+      } catch (e) {
+        // Non-fatal — user may need to select outlet manually in Settings
+        console.warn('Could not auto-fetch outlet after login:', e)
+      }
     }
 
     return data
