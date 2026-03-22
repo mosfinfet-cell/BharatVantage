@@ -76,13 +76,16 @@ async def enqueue_compute(
     if session.ingest_status != "done":
         raise HTTPException(400, f"Ingestion not complete (status: {session.ingest_status}).")
 
-    # Pass outlet_type so compute engine branches correctly
+    # vertical = the metric engine to use. Always "restaurant" for BharatVantage v1.
+    # outlet_type (hybrid / dine_in / cloud_kitchen) controls which metric GROUPS
+    # are computed — that branching happens inside the engine via _build_outlet_config,
+    # not here. Passing outlet_type here was the bug: registry only has "restaurant".
     pool = await get_arq_pool()
     job  = await pool.enqueue_job(
         "run_compute_job",
         session_id,
         str(outlet.id),
-        outlet.outlet_type.value if hasattr(outlet.outlet_type, "value") else str(outlet.outlet_type),
+        "restaurant",
     )
     session.compute_status = "queued"
     session.compute_job_id = job.job_id

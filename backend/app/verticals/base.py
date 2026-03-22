@@ -54,8 +54,19 @@ class MetricResult(BaseModel):
     sources_used: List[str] = []
     alignment_warnings: List[str] = []
 
-    # Per-metric sufficiency — populated by compute_metrics
+    # Per-metric sufficiency — populated by compute_metrics.
+    # Defined here as a class-level annotation only. The actual instance
+    # dict is created in __init__ so each MetricResult instance gets its
+    # own dict. Without this, all instances share the same dict and one
+    # compute job's sufficiency data bleeds into the next.
     _sufficiency: Dict[str, MetricSufficiency] = {}
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Force instance-level dict — overrides the class-level default.
+        # object.__setattr__ is used because Pydantic v2 models are frozen
+        # by default during __init__ for private attributes.
+        object.__setattr__(self, "_sufficiency", {})
 
     def sufficiency_map(self) -> Dict[str, str]:
         return {k: v.value for k, v in self._sufficiency.items()}
