@@ -16,10 +16,10 @@ const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
 // ── Token store (sessionStorage) ──────────────────────────────────────────
 // Used by AuthContext to persist token and outletId across page refreshes.
 export const tokenStore = {
-  getToken:     ()  => sessionStorage.getItem('bv_token'),
+  getToken:     ()  => { const v = sessionStorage.getItem('bv_token');     return (v && v !== 'null') ? v : null; },
   setToken:     (t) => sessionStorage.setItem('bv_token', t),
   clearToken:   ()  => sessionStorage.removeItem('bv_token'),
-  getOutlet:    ()  => sessionStorage.getItem('bv_outlet_id'),
+  getOutlet:    ()  => { const v = sessionStorage.getItem('bv_outlet_id'); return (v && v !== 'null') ? v : null; },
   setOutlet:    (id)=> sessionStorage.setItem('bv_outlet_id', id),
   clearOutlet:  ()  => sessionStorage.removeItem('bv_outlet_id'),
   clear:        ()  => { sessionStorage.removeItem('bv_token'); sessionStorage.removeItem('bv_outlet_id'); },
@@ -30,8 +30,10 @@ export const tokenStore = {
 // ── Core request helper ────────────────────────────────────────────────────
 async function request(method, path, body = null, token = null, outletId = null) {
   const headers = { "Content-Type": "application/json" };
-  if (token)    headers["Authorization"]  = `Bearer ${token}`;
-  if (outletId) headers["X-Outlet-ID"]    = outletId;
+  // Guard: tokenStore returns null as the string "null" if key was never set.
+  // Never send "null" as a header value — it reaches the backend as a literal string.
+  if (token && token !== 'null')       headers["Authorization"] = `Bearer ${token}`;
+  if (outletId && outletId !== 'null') headers["X-Outlet-ID"]   = outletId;
 
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
