@@ -88,12 +88,15 @@ export const config = {
 // ── Upload ────────────────────────────────────────────────────────────────
 export const upload = {
   /**
-   * Upload a file. Returns { session_id, status: 'queued' }.
+   * Upload one or more files. Returns { session_id, files, needs_confirm }.
    * Uses FormData — does NOT use the JSON request helper.
+   * Backend expects field name "files" (plural) — do not change.
    */
-  uploadFile: async (token, outletId, file) => {
+  uploadFile: async (token, outletId, files) => {
     const form = new FormData();
-    form.append("file", file);
+    // Accept single File or array of Files
+    const fileList = Array.isArray(files) ? files : [files];
+    fileList.forEach(f => form.append("files", f));
 
     const res = await fetch(`${BASE}/upload`, {
       method:  "POST",
@@ -111,6 +114,24 @@ export const upload = {
     return res.json();
   },
 
+  /**
+   * Confirm source types for files in a session.
+   * confirmations: [{ file_id, confirmed_source }]
+   * Called by UploadPage as uploadApi.confirmSession(sessionId, confirmations)
+   */
+  confirmSession: (sessionId, confirmations) => {
+    const token    = tokenStore.getToken();
+    const outletId = tokenStore.getOutlet();
+    return request(
+      "PATCH",
+      `/upload/${sessionId}/confirm`,
+      { confirmations },
+      token,
+      outletId,
+    );
+  },
+
+  // Legacy alias — kept for backward compatibility
   confirm: (token, outletId, sessionId) =>
     request("PATCH", `/upload/${sessionId}/confirm`, null, token, outletId),
 };

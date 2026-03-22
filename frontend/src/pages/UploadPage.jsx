@@ -13,7 +13,7 @@ import {
   Upload, File, CheckCircle, AlertTriangle, X,
   ChevronRight, Loader2, FileText, Zap
 } from 'lucide-react'
-import { upload as uploadApi, compute as computeApi } from '@/lib/api'
+import { upload as uploadApi, compute as computeApi, tokenStore } from '@/lib/api'
 import Button from '@/components/ui/Button'
 import { clsx } from 'clsx'
 
@@ -232,7 +232,10 @@ export default function UploadPage() {
     setError('')
     setUploading(true)
     try {
-      const data = await uploadApi.uploadFiles(files)
+      const token    = tokenStore.getToken()
+      const outletId = tokenStore.getOutlet()
+      // uploadFile now accepts an array — sends all files in one multipart request
+      const data = await uploadApi.uploadFile(token, outletId, files)
       setSessionData(data)
       setStep(2)
     } catch (err) {
@@ -247,17 +250,20 @@ export default function UploadPage() {
     setError('')
     setUploading(true)
     try {
-      // Build confirmations array: [{filename, confirmed_source}]
+      const token    = tokenStore.getToken()
+      const outletId = tokenStore.getOutlet()
+
+      // Build confirmations array: [{ file_id, confirmed_source }]
+      // file_id comes from sessionData.files[].file_id (backend UUID)
       const confirmList = (sessionData?.files || []).map(f => ({
-        filename:         f.filename,
-        confirmed_source: confirmations[f.filename] || f.detected_source,
+        file_id:          f.file_id,
+        confirmed_source: confirmations[f.file_id] || confirmations[f.filename] || f.detected_source,
       }))
 
       await uploadApi.confirmSession(sessionData.session_id, confirmList)
-      await computeApi.triggerCompute(sessionData.session_id)
+      await computeApi.enqueue(token, outletId, sessionData.session_id)
 
       setStep(3)
-      // Navigate to metrics page to poll status
       setTimeout(() => {
         navigate(`/metrics/${sessionData.session_id}`)
       }, 1500)
@@ -339,7 +345,7 @@ export default function UploadPage() {
                 <Button
                   loading={uploading}
                   icon={uploading ? null : <ChevronRight size={16} />}
-                  onClick={handleDemoUpload}  // swap to handleUpload when backend live
+                  onClick={handleUpload}
                   size="lg"
                 >
                   {uploading ? 'Uploading…' : 'Upload and detect'}
