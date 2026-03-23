@@ -84,7 +84,92 @@ function AlertBanner({ alert }) {
   );
 }
 
-// ── Number formatters ──────────────────────────────────────────────────────
+// ── Backend → Frontend metric adapter ─────────────────────────────────────
+// The backend returns RestaurantMetricResult v1.0 fields.
+// The frontend Layer1/Layer2/tabs expect a v1.1 shape.
+// This adapter bridges the gap without changing either side.
+function adaptMetrics(raw) {
+  if (!raw) return {};
+  const ny = raw.net_yield       || {};
+  const pc = raw.prime_cost      || {};
+  const pl = raw.penalty_leakage || {};
+  const rv = raw.revpash         || {};
+  const iv = raw.inventory_variance || {};
+
+  // Build payout bridge from net_yield fields
+  const payoutBridge = ny.gross_sales ? {
+    gross_revenue:        ny.gross_sales,
+    less_commission:      -(ny.total_commission || 0),
+    less_gst_on_commission: 0,
+    less_ad_spend:        -(ny.total_ad_spend  || 0),
+    less_discounts:       -(ny.total_discounts || 0),
+    less_penalties:       -(ny.total_penalties || 0),
+    actual_payout:         ny.true_net_yield,
+  } : null;
+
+  // Build per-platform true order margin from aov_by_channel
+  const byPlatform = {};
+  (raw.aov_by_channel || []).forEach(ch => {
+    byPlatform[ch.channel] = {
+      avg_gross:      ch.aov,
+      avg_commission: ch.aov * 0.22,
+      avg_ad_spend:   0,
+      avg_packaging:  0,
+      avg_food_cost:  0,
+      avg_pocket:     ch.aov * (1 - 0.22),
+    };
+  });
+
+  // Build penalty data
+  const penaltyData = {
+    total:       pl.total_leakage,
+    order_count: pl.order_count,
+    by_channel:  pl.by_channel,
+    recoverable: { orders: pl.top_orders || [], total: pl.total_leakage },
+  };
+
+  return {
+    // Layer 1 fields
+    total_earnings:   ny.true_net_yield,
+    staff_cost_pct:   pc.prime_cost_pct != null
+      ? Math.max(0, pc.prime_cost_pct - (pc.total_cogs || 0) / (ny.gross_sales || 1) * 100)
+      : null,
+    prime_cost_pct:   pc.prime_cost_pct,
+    kitchen_conflict_days: null,
+
+    // Online tab fields
+    online: {
+      payout_bridge:      payoutBridge,
+      true_order_margin:  Object.keys(byPlatform).length ? { by_platform: byPlatform } : null,
+      penalties:          penaltyData,
+      ad_spend_efficiency: null,
+      pending_settlements: [],
+      platform_earnings:  (raw.aov_by_channel || []).map(ch => ({
+        platform:       ch.channel,
+        gross:          ch.revenue,
+        net:            ch.revenue * (ny.net_margin_pct / 100 || 0.7),
+        commission_pct: 22,
+        orders:         ch.orders,
+        aov:            ch.aov,
+      })),
+    },
+
+    // Dine-in tab fields
+    dine_in: {
+      revpash:         rv.revpash,
+      today_earnings:  null,
+      avg_bill_per_table: null,
+      cash_reconciliation: { manual_entry_required: true, daily_gaps: [] },
+    },
+
+    // People tab
+    staff_cost_total: pc.total_labor,
+    prime_cost_weekly: [],
+
+    // Passthrough raw fields for any component that reads them directly
+    ...raw,
+  };
+}
 function fmt(val, type = "inr") {
   if (val === null || val === undefined) return "—";
   const n = Number(val);
@@ -878,8 +963,17 @@ export default function MetricsPage() {
     return stopPolling;
   }, [pollStatus]);
 
-  const metrics = snapshot?.metrics || {};
-  const suf     = snapshot?.sufficiency || {};
+  const rawMetrics = snapshot?.metrics || {};
+  const metrics    = adaptMetrics(rawMetrics);
+  const rawSuf     = snapshot?.sufficiency || {};
+  // Remap sufficiency keys from backend names to frontend field names
+  const suf = {
+    ...rawSuf,
+    total_earnings:   rawSuf.net_yield,
+    prime_cost_pct:   rawSuf.prime_cost,
+    staff_cost_pct:   rawSuf.prime_cost,
+    true_order_margin: rawSuf.net_yield,
+  };
   const alerts  = snapshot?.alerts || [];
   const outletType = snapshot?.outlet_type || "hybrid";
 
