@@ -20,7 +20,7 @@ import {
   FileDown, MessageSquare, TrendingUp, TrendingDown,
   Clock, Users, ShoppingBag, Zap, ChevronRight,
 } from "lucide-react";
-import { compute as computeApi, actions as actionsApi, manualEntry } from "@/lib/api";
+import { compute as computeApi, actions as actionsApi, manualEntry, tokenStore } from "@/lib/api";
 import { useAuth } from "@/store/AuthContext";
 import Button from "@/components/ui/Button";
 
@@ -823,10 +823,14 @@ function CAExportTab({ caData, sufficiency, sessionId, token, outletId }) {
 // ══════════════════════════════════════════════════════════════════════════
 export default function MetricsPage() {
   const { sessionId } = useParams();
-  const { token, outletId } = useAuth();
+  const { outletId: ctxOutletId } = useAuth();
+  // Token lives in tokenStore, not in AuthContext — get it directly
+  const token    = tokenStore.getToken();
+  const outletId = ctxOutletId || tokenStore.getOutlet();
   const [status, setStatus]     = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState(null);
   const [activeTab, setActiveTab] = useState("dine_in");
   const pollRef = useRef(null);
 
@@ -842,6 +846,9 @@ export default function MetricsPage() {
       }
     } catch (e) {
       console.error("metrics fetch error:", e);
+      setError(e.message || "Failed to load metrics.");
+      setLoading(false);
+      stopPolling();
     }
   }, [token, outletId, sessionId]);
 
@@ -852,9 +859,16 @@ export default function MetricsPage() {
       if (s.ready) {
         stopPolling();
         await fetchMetrics();
+      } else if (s.compute_status === "failed") {
+        setError(s.error_message || "Compute job failed.");
+        setLoading(false);
+        stopPolling();
       }
     } catch (e) {
       console.error("status poll error:", e);
+      setError(e.message || "Failed to fetch status.");
+      setLoading(false);
+      stopPolling();
     }
   }, [token, outletId, sessionId, fetchMetrics]);
 
@@ -882,6 +896,18 @@ export default function MetricsPage() {
     { id: "people",  label: "People"    },
     { id: "ca",      label: "CA Export" },
   ];
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <AlertTriangle className="text-red-400" size={28} />
+        <div className="text-sm text-red-400">{error}</div>
+        <Link to="/upload" className="text-xs text-[var(--text-muted)] underline">
+          Upload new data
+        </Link>
+      </div>
+    );
+  }
 
   if (loading && !snapshot) {
     return (
