@@ -71,20 +71,16 @@ export const auth = {
 
 // ── Config (outlets) ──────────────────────────────────────────────────────
 export const config = {
+  // Backend mounts config router at /api/v1 with no extra prefix.
+  // Actual endpoints are /outlets, /outlets/{id} — NOT /config/outlets.
   listOutlets: (token) =>
-    request("GET", "/config/outlets", null, token),
+    request("GET", "/outlets", null, token),
 
   createOutlet: (token, body) =>
-    request("POST", "/config/outlets", body, token),
+    request("POST", "/outlets", body, token),
 
-  /**
-   * Update outlet config — packaging tiers, outlet_type, etc.
-   * body: { outlet_type?, packaging_cost_tier1?, packaging_cost_tier2?,
-   *         packaging_cost_tier3?, packaging_configured?, gst_rate_pct?,
-   *         monthly_rent?, monthly_utilities?, seat_count? }
-   */
   updateOutlet: (token, outletId, body) =>
-    request("PATCH", `/config/outlets/${outletId}`, body, token),
+    request("PATCH", `/outlets/${outletId}`, body, token),
 };
 
 // ── Upload ────────────────────────────────────────────────────────────────
