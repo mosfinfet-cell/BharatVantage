@@ -187,8 +187,15 @@ async def get_current_outlet(
     """
     from app.models.org import Outlet  # avoid circular import
 
-    if not x_outlet_id:
-        raise HTTPException(status_code=400, detail="X-Outlet-ID header is required.")
+    # Guard: frontend may send the literal string "null" when outletId is not
+    # yet stored in sessionStorage (e.g. first login before outlet fetch completes).
+    # "null" is truthy in Python so `if not x_outlet_id` does not catch it —
+    # it passes through and causes asyncpg to crash with "invalid UUID 'null'".
+    if not x_outlet_id or x_outlet_id == "null":
+        raise HTTPException(
+            status_code=400,
+            detail="X-Outlet-ID header is required. Please log out and log in again.",
+        )
 
     result = await db.execute(
         select(Outlet).where(
