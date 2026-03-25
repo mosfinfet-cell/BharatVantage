@@ -11,7 +11,7 @@ import {
   Upload, RefreshCw, ArrowRight, CheckCircle,
   Clock, AlertCircle, ChevronRight, Zap
 } from 'lucide-react'
-import { compute as computeApi, upload as uploadApi } from '@/lib/api'
+import { compute as computeApi, upload as uploadApi, tokenStore } from '@/lib/api'
 import { useAuth } from '@/store/AuthContext'
 
 // ── Status badge ──────────────────────────────────────────────────
@@ -149,7 +149,9 @@ function SessionCard({ session, onCompute, computing }) {
 
 // ── Main page ─────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { token, outletId } = useAuth()
+  const { outletId: ctxOutletId } = useAuth()
+  const token    = tokenStore.getToken()
+  const outletId = ctxOutletId || tokenStore.getOutlet()
   const navigate = useNavigate()
   const [sessions,  setSessions]  = useState([])
   const [loading,   setLoading]   = useState(true)
