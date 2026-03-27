@@ -48,7 +48,19 @@ async function request(method, path, body = null, token = null, outletId = null)
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail || `HTTP ${res.status}`);
+    // FastAPI returns detail as a string for business logic errors
+    // ("Email already registered.") but as an array of objects for Pydantic
+    // validation errors ([{ loc, msg, type }]). Rendering an array directly
+    // produces "[object Object]" — so we normalise both shapes to a string here.
+    let message;
+    if (typeof err.detail === "string") {
+      message = err.detail;
+    } else if (Array.isArray(err.detail)) {
+      message = err.detail.map((d) => d.msg).join(", ");
+    } else {
+      message = `HTTP ${res.status}`;
+    }
+    throw new Error(message);
   }
 
   return res.json();
@@ -107,7 +119,12 @@ export const upload = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Upload failed" }));
-      throw new Error(err.detail || `HTTP ${res.status}`);
+      const message = typeof err.detail === "string"
+        ? err.detail
+        : Array.isArray(err.detail)
+          ? err.detail.map((d) => d.msg).join(", ")
+          : `HTTP ${res.status}`;
+      throw new Error(message);
     }
     return res.json();
   },
