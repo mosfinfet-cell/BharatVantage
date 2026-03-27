@@ -6,6 +6,7 @@ Usage:
     data = await storage.download(key)
     await storage.delete(key)
 """
+import asyncio
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
@@ -54,7 +55,9 @@ class StorageClient:
         """Upload file bytes to R2. Returns the storage key."""
         key = self._key(session_id, filename)
         try:
-            self.client.put_object(
+            # boto3 is synchronous — run in a thread to avoid blocking the async event loop
+            await asyncio.to_thread(
+                self.client.put_object,
                 Bucket=settings.R2_BUCKET_NAME,
                 Key=key,
                 Body=content,
@@ -69,7 +72,8 @@ class StorageClient:
     async def download(self, key: str) -> bytes:
         """Download file bytes from R2 by key."""
         try:
-            response = self.client.get_object(
+            response = await asyncio.to_thread(
+                self.client.get_object,
                 Bucket=settings.R2_BUCKET_NAME,
                 Key=key,
             )
@@ -82,7 +86,8 @@ class StorageClient:
     async def delete(self, key: str) -> None:
         """Delete a file from R2."""
         try:
-            self.client.delete_object(
+            await asyncio.to_thread(
+                self.client.delete_object,
                 Bucket=settings.R2_BUCKET_NAME,
                 Key=key,
             )
@@ -93,7 +98,11 @@ class StorageClient:
     async def exists(self, key: str) -> bool:
         """Check if a key exists in R2."""
         try:
-            self.client.head_object(Bucket=settings.R2_BUCKET_NAME, Key=key)
+            await asyncio.to_thread(
+                self.client.head_object,
+                Bucket=settings.R2_BUCKET_NAME,
+                Key=key,
+            )
             return True
         except ClientError:
             return False

@@ -13,6 +13,7 @@ from datetime import datetime, date
 from typing import Optional, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -30,8 +31,9 @@ status_router  = APIRouter()
 metrics_router = APIRouter()
 manual_router  = APIRouter()
 
-# v1.1: bump to 2 — new MetricSnapshot shape is not backward compatible
-CURRENT_SCHEMA_VERSION = 2
+# Must match CURRENT_SCHEMA_VERSION in jobs.py (the writer).
+# Both must be updated together whenever the metric shape changes.
+CURRENT_SCHEMA_VERSION = 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -195,7 +197,10 @@ async def get_metrics(
     if not session:
         raise HTTPException(404, "Session not found.")
     if session.compute_status != "done":
-        raise HTTPException(202, f"Metrics not ready. Current status: {session.compute_status}")
+        return JSONResponse(
+            status_code=202,
+            content={"status": session.compute_status, "message": f"Metrics not ready. Current status: {session.compute_status}"},
+        )
 
     snap_result = await db.execute(
         select(MetricSnapshot).where(MetricSnapshot.session_id == session_id)
@@ -205,7 +210,7 @@ async def get_metrics(
         raise HTTPException(404, "Metric snapshot not found.")
 
     # Extract sufficiency and alerts from result (v1.1 embeds them)
-    raw_result  = snapshot.result or {}
+    raw_result  = dict(snapshot.result or {})   # shallow copy — never mutate the ORM object
     sufficiency = raw_result.pop("sufficiency", snapshot.sufficiency or {})
     alerts      = raw_result.pop("alerts", [])
 

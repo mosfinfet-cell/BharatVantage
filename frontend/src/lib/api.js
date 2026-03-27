@@ -28,7 +28,7 @@ export const tokenStore = {
 
 
 // ── Core request helper ────────────────────────────────────────────────────
-async function request(method, path, body = null, token = null, outletId = null) {
+async function request(method, path, body = null, token = null, outletId = null, _retried = false) {
   const headers = { "Content-Type": "application/json" };
   // Guard: tokenStore returns null as the string "null" if key was never set.
   // Never send "null" as a header value — it reaches the backend as a literal string.
@@ -40,6 +40,26 @@ async function request(method, path, body = null, token = null, outletId = null)
 
   const res = await fetch(`${BASE}${path}`, opts);
 
+  // Auto-refresh: if we get 401 and haven't already retried, attempt a token refresh
+  // and replay the original request once with the new token.
+  // Skip retry for /auth/* paths to avoid infinite loops on bad credentials.
+  if (res.status === 401 && !_retried && !path.startsWith("/auth")) {
+    try {
+      const refreshRes = await fetch(`${BASE}/auth/refresh`, { method: "POST" });
+      if (refreshRes.ok) {
+        const refreshData = await refreshRes.json();
+        tokenStore.setToken(refreshData.access_token);
+        // Retry original request with new token
+        return request(method, path, body, refreshData.access_token, outletId, true);
+      }
+    } catch {
+      // Refresh failed — fall through to throw 401 below
+    }
+    // Refresh failed or returned non-200: clear session and force re-login
+    tokenStore.clear();
+    window.location.href = "/login";
+  }
+
   // 202 Accepted = not ready yet (not an error)
   if (res.status === 202) {
     const data = await res.json().catch(() => ({}));
@@ -48,21 +68,13 @@ async function request(method, path, body = null, token = null, outletId = null)
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-    // FastAPI returns detail as a string for business logic errors
-    // ("Email already registered.") but as an array of objects for Pydantic
-    // validation errors ([{ loc, msg, type }]). Rendering an array directly
-    // produces "[object Object]" — so we normalise both shapes to a string here.
-    let message;
-    if (typeof err.detail === "string") {
-      message = err.detail;
-    } else if (Array.isArray(err.detail)) {
-      message = err.detail.map((d) => d.msg).join(", ");
-    } else {
-      message = `HTTP ${res.status}`;
-    }
-    throw new Error(message);
+    throw new Error(err.detail || `HTTP ${res.status}`);
   }
 
+  // 204 No Content (e.g. /auth/logout) has no body — res.json() would throw SyntaxError
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return null;
+  }
   return res.json();
 }
 
@@ -119,12 +131,7 @@ export const upload = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Upload failed" }));
-      const message = typeof err.detail === "string"
-        ? err.detail
-        : Array.isArray(err.detail)
-          ? err.detail.map((d) => d.msg).join(", ")
-          : `HTTP ${res.status}`;
-      throw new Error(message);
+      throw new Error(err.detail || `HTTP ${res.status}`);
     }
     return res.json();
   },
@@ -221,36 +228,29 @@ export const manualEntry = {
 export const actions = {
   /**
    * Raise a dispute for recoverable penalties.
-   * Generates a structured dispute list matching platform portal format.
-   * @param {Array} orders  Array of { id, date, platform, amount, reason }
+   * Backend route: POST /actions/{session_id}/raise_dispute
+   * Body is wrapped in ActionRequest.payload by the backend.
    */
   raiseDispute: (token, outletId, { sessionId, orders }) =>
-    request("POST", "/actions/dispute", {
-      session_id: sessionId,
-      orders,
+    request("POST", `/actions/${sessionId}/raise_dispute`, {
+      payload: { orders },
     }, token, outletId),
 
   /**
    * Export CA GST Reconciliation Report.
-   * @param {string} format  'pdf' | 'csv'
+   * Backend route: POST /actions/{session_id}/export_report
    */
   exportCA: (token, outletId, { sessionId, format = "pdf" }) =>
-    request("POST", "/actions/export", {
-      export_type: "gst_reconciliation",
-      session_id:  sessionId,
-      format,
+    request("POST", `/actions/${sessionId}/export_report`, {
+      payload: { format, export_type: "gst_reconciliation" },
     }, token, outletId),
 
-  /** Check export status / get download URL. */
-  getExport: (token, outletId, exportId) =>
-    request("GET", `/actions/export/${exportId}`, null, token, outletId),
-
-  /** Flag a shift for manager review. */
+  /** Flag a shift for manager review.
+   * Backend route: POST /actions/{session_id}/flag_shift
+   */
   flagShift: (token, outletId, { sessionId, shiftLabel, reason }) =>
-    request("POST", "/actions/flag-shift", {
-      session_id:  sessionId,
-      shift_label: shiftLabel,
-      reason,
+    request("POST", `/actions/${sessionId}/flag_shift`, {
+      payload: { shift_label: shiftLabel, reason },
     }, token, outletId),
 };
 

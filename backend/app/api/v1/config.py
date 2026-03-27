@@ -96,7 +96,43 @@ async def list_outlets(
             created_at    = o.created_at.isoformat(),
         )
         for o in outlets
-    ]
+
+
+@router.patch("/outlets/{outlet_id}", response_model=OutletResponse)
+async def update_outlet(
+    outlet_id:  str,
+    body:       CreateOutletRequest,
+    token_data: TokenData      = Depends(get_current_user),
+    db:         AsyncSession   = Depends(get_db),
+):
+    """Update outlet settings. Verifies org ownership before writing."""
+    result = await db.execute(
+        select(Outlet).where(
+            Outlet.id         == outlet_id,
+            Outlet.org_id     == token_data.org_id,
+            Outlet.deleted_at.is_(None),
+        )
+    )
+    outlet = result.scalar_one_or_none()
+    if not outlet:
+        raise HTTPException(404, "Outlet not found or access denied.")
+
+    if body.name          is not None: outlet.name          = body.name
+    if body.city          is not None: outlet.city          = body.city
+    if body.seats         is not None: outlet.seats         = body.seats
+    if body.opening_hours is not None: outlet.opening_hours = body.opening_hours
+    if body.gst_rate      is not None: outlet.gst_rate      = body.gst_rate
+
+    await db.commit()
+    return OutletResponse(
+        id            = outlet.id,
+        name          = outlet.name,
+        city          = outlet.city,
+        seats         = outlet.seats,
+        opening_hours = outlet.opening_hours,
+        gst_rate      = outlet.gst_rate,
+        created_at    = outlet.created_at.isoformat(),
+    )
 
 
 # ── Platform commissions ──────────────────────────────────────────────────────
