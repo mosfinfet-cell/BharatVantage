@@ -11,6 +11,7 @@ export default function RegisterPage() {
   const navigate     = useNavigate()
 
   const [fullName, setFullName] = useState('')
+  const [orgName,  setOrgName]  = useState('')
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [error,    setError]    = useState('')
@@ -25,7 +26,7 @@ export default function RegisterPage() {
     }
     setLoading(true)
     try {
-      await register(email, password, fullName)
+      await register(email, password, fullName, orgName)
       navigate('/dashboard', { replace: true })
     } catch (err) {
       setError(err.message || 'Registration failed.')
@@ -64,6 +65,15 @@ export default function RegisterPage() {
             value={fullName}
             onChange={e => setFullName(e.target.value)}
             placeholder="Rohan Sharma"
+            icon={<User size={15} />}
+            required
+          />
+          <Input
+            label="Restaurant / Outlet name"
+            type="text"
+            value={orgName}
+            onChange={e => setOrgName(e.target.value)}
+            placeholder="The Curry House"
             icon={<User size={15} />}
             required
           />

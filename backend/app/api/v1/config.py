@@ -121,14 +121,14 @@ async def upsert_platform_config(
     )
     existing = result.scalar_one_or_none()
     if existing:
-        existing.commission_pct = body.commission_pct
+        existing.base_commission_pct = body.commission_pct
         existing.updated_at     = datetime.utcnow()
     else:
         db.add(PlatformConfig(
             id             = str(uuid.uuid4()),
             outlet_id      = outlet_id,
             platform       = body.platform,
-            commission_pct = body.commission_pct,
+            base_commission_pct = body.commission_pct,
         ))
     await db.commit()
     return {"ok": True, "platform": body.platform, "commission_pct": body.commission_pct}

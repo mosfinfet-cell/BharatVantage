@@ -63,18 +63,41 @@ export function AuthProvider({ children }) {
     return data
   }, [])
 
-  const register = useCallback(async (email, password, fullName) => {
+  const register = useCallback(async (email, password, fullName, orgName) => {
     // authApi.register expects a single body object — NOT 3 separate args.
     // Field names must match the backend Pydantic schema (snake_case).
-    const data = await authApi.register({ email, password, full_name: fullName })
+    // org_name is required by RegisterRequest — the backend creates the org record with it.
+    const data = await authApi.register({
+      email,
+      password,
+      full_name: fullName,
+      org_name:  orgName,
+    })
     tokenStore.setToken(data.access_token)
     const payload = JSON.parse(atob(data.access_token.split('.')[1]))
     setUser({ userId: payload.sub, orgId: payload.org_id })
+
+    // After register, no outlet exists yet — create the first one automatically.
+    // Without an outlet, every subsequent API call requiring X-Outlet-ID will fail.
+    try {
+      const outlet = await configApi.createOutlet(data.access_token, { name: orgName })
+      if (outlet?.id) {
+        tokenStore.setOutlet(outlet.id)
+        setOutletIdState(outlet.id)
+      }
+    } catch (e) {
+      // Non-fatal — user can create outlet manually in Settings
+      console.warn('Could not auto-create outlet after register:', e)
+    }
+
     return data
   }, [])
 
   const logout = useCallback(async () => {
-    try { await authApi.logout() } catch { /* best effort */ }
+    // Pass the current token so backend can revoke all refresh tokens for this user.
+    // authApi.logout(token) → request("POST", "/auth/logout", null, token)
+    const token = tokenStore.getToken()
+    try { await authApi.logout(token) } catch { /* best effort */ }
     tokenStore.clear()
     setUser(null)
     setOutletIdState(null)
