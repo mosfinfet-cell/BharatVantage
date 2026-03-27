@@ -64,7 +64,9 @@ export function AuthProvider({ children }) {
   }, [])
 
   const register = useCallback(async (email, password, fullName) => {
-    const data = await authApi.register(email, password, fullName)
+    // authApi.register expects a single body object — NOT 3 separate args.
+    // Field names must match the backend Pydantic schema (snake_case).
+    const data = await authApi.register({ email, password, full_name: fullName })
     tokenStore.setToken(data.access_token)
     const payload = JSON.parse(atob(data.access_token.split('.')[1]))
     setUser({ userId: payload.sub, orgId: payload.org_id })
