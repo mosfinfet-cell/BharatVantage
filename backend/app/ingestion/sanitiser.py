@@ -178,7 +178,7 @@ def _drop_total_rows(df: pd.DataFrame) -> pd.DataFrame:
 
     first_col = df.iloc[:, 0].astype(str).str.lower().str.strip()
     total_mask = first_col.str.contains(
-        r"\b(total|subtotal|grand total|sum|avg|average|net)\b",
+        r"\b(?:total|subtotal|grand total|sum|avg|average|net)\b",
         regex=True, na=False
     )
     removed = total_mask.sum()
@@ -197,13 +197,42 @@ def _strip_merged_artifacts(df: pd.DataFrame) -> pd.DataFrame:
     Excel merged cells produce NaN in all but the first cell.
     Forward-fill string columns that look like they result from merges.
     Only applies to columns that look like category/label columns (not numeric).
+
+    Bug fixes:
+    1. Duplicate column names cause df[col] to return a DataFrame instead of a
+       Series — DataFrame has no .dtype attribute, only .dtypes. We take the
+       first column of any duplicate set and operate on that Series only.
+    2. fillna(method="ffill") is deprecated in pandas 2.x — replaced with .ffill().
     """
+    # Deduplicate column names before iterating — duplicate headers are the
+    # root cause of df[col] returning a DataFrame instead of a Series.
+    # This can happen with Petpooja/Tally exports that repeat column names.
+    if df.columns.duplicated().any():
+        seen: dict = {}
+        new_cols = []
+        for col in df.columns:
+            if col in seen:
+                seen[col] += 1
+                new_cols.append(f"{col}_{seen[col]}")
+            else:
+                seen[col] = 0
+                new_cols.append(col)
+        df.columns = new_cols
+
     for col in df.columns:
-        if df[col].dtype == object:
-            null_frac = df[col].isna().mean()
-            # If > 30% nulls in a string column, likely merged cells
+        # Guard: after deduplication df[col] should always be a Series,
+        # but defend against edge cases (e.g. empty DataFrames).
+        col_series = df[col]
+        if isinstance(col_series, pd.DataFrame):
+            # Still a DataFrame — take the first column as a fallback
+            col_series = col_series.iloc[:, 0]
+            df[col] = col_series
+
+        if col_series.dtype == object:
+            null_frac = col_series.isna().mean()
+            # If > 30% nulls in a string column, likely merged cells — forward fill
             if null_frac > 0.30:
-                df[col] = df[col].fillna(method="ffill")
+                df[col] = col_series.ffill()   # pandas 2.x safe (replaces deprecated fillna(method="ffill"))
     return df
 
 
