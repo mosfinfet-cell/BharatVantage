@@ -96,6 +96,7 @@ async def list_outlets(
             created_at    = o.created_at.isoformat(),
         )
         for o in outlets
+    ]
 
 
 @router.patch("/outlets/{outlet_id}", response_model=OutletResponse)
