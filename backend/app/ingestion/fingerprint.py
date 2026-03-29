@@ -44,9 +44,11 @@ COLUMN_SIGNATURES = {
                      "godown", "batch", "closing balance", "tally"],
     },
     "payroll": {
-        "required": ["employee", "wage"],
-        "bonus":    ["shift", "attendance", "salary", "designation", "basic pay",
-                     "pf", "esi", "net pay", "working days", "department"],
+        "required": ["employee", "salary"],           # "wage" rarely appears; "salary" is universal
+        "bonus":    ["shift", "attendance", "basic salary", "gross salary", "net salary",
+                     "pf", "esi", "tds", "working days", "days present", "overtime",
+                     "designation", "department", "allowance", "deduction",
+                     "wage", "net pay", "basic pay", "hra"],
     },
 }
 
@@ -84,10 +86,17 @@ PETPOOJA_VERSIONS = {
                 "tax", "grand total"],
 }
 
+PAYROLL_VERSIONS = {
+    "standard_v1": ["employee id", "employee name", "role", "basic salary",
+                    "gross salary", "net salary", "pf deduction"],
+    "generic_v1":  ["employee name", "salary", "attendance", "working days"],
+}
+
 VERSION_MAPS = {
     "swiggy":   SWIGGY_VERSIONS,
     "zomato":   ZOMATO_VERSIONS,
     "petpooja": PETPOOJA_VERSIONS,
+    "payroll":  PAYROLL_VERSIONS,
 }
 
 
@@ -198,7 +207,14 @@ def detect_source(headers: List[str], df: pd.DataFrame = None) -> SourceDetectio
         if signals.get("mentions_zomato"):    best_source, best_score = "zomato", min(1.0, best_score + 0.2)
         if signals.get("has_ingredients"):    best_score = min(1.0, best_score + 0.1)
         if signals.get("has_staff_roles"):
-            if best_source == "payroll":      best_score = min(1.0, best_score + 0.15)
+            # Boost payroll score regardless of current best — staff role keywords
+            # are strong payroll signals (chef, waiter, manager, cashier, captain)
+            payroll_score = next((s for src, s in scores if src == "payroll"), 0)
+            if payroll_score + 0.20 > best_score:
+                best_source = "payroll"
+                best_score  = min(1.0, payroll_score + 0.20)
+            elif best_source == "payroll":
+                best_score  = min(1.0, best_score + 0.15)
         if signals.get("has_gst_rates"):      best_score = min(1.0, best_score + 0.05)
 
     if best_score < 0.30:

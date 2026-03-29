@@ -291,6 +291,16 @@ async def confirm_sources(
     all_files = all_files_result.scalars().all()
     ready     = all(f.confirmed_source is not None for f in all_files)
 
+    # BUG FIX: enqueue ingestion job now that all files have a confirmed source.
+    # The upload endpoint only auto-enqueues when needs_confirm=False (high confidence).
+    # For manually-confirmed files (needs_confirm=True), the job was never enqueued —
+    # leaving session.ingest_status = "pending" forever and blocking compute.
+    if ready and session.ingest_status == "pending":
+        pool = await get_arq_pool()
+        await pool.enqueue_job("run_ingestion_job", session_id)
+        session.ingest_status = "queued"
+        await db.commit()
+
     return ConfirmResponse(
         session_id        = session_id,
         confirmed         = confirmed_results,
