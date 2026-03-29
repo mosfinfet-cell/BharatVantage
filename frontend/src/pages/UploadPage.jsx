@@ -213,6 +213,7 @@ export default function UploadPage() {
   const [sessionData, setSessionData]   = useState(null)
   const [confirmations, setConfirmations] = useState({})  // { filename: source_type }
   const [error, setError]               = useState('')
+  const [ingestPolling, setIngestPolling] = useState(false)  // true while waiting for ARQ ingestion
 
   const addFiles = (newFiles) => {
     // Deduplicate by name
@@ -245,7 +246,7 @@ export default function UploadPage() {
     }
   }
 
-  // Step 2 → 3: Confirm sources + trigger compute
+  // Step 2 → 3: Confirm sources + poll ingestion + trigger compute
   const handleConfirm = async () => {
     setError('')
     setUploading(true)
@@ -255,12 +256,45 @@ export default function UploadPage() {
 
       // Build confirmations array: [{ file_id, confirmed_source }]
       // file_id comes from sessionData.files[].file_id (backend UUID)
+      // confirmed_source falls back to auto-detected source for high-confidence files.
       const confirmList = (sessionData?.files || []).map(f => ({
         file_id:          f.file_id,
         confirmed_source: confirmations[f.file_id] || confirmations[f.filename] || f.detected_source,
       }))
 
+      // 1. Confirm source types (required even for high-confidence auto-detected files
+      //    so the backend marks all files as confirmed before ingestion runs).
       await uploadApi.confirmSession(sessionData.session_id, confirmList)
+
+      // 2. Poll ingest status until done — the backend rejects POST /compute
+      //    with 400 "Ingestion not complete" if ingest_status !== "done".
+      //    The ARQ worker processes the ingestion job asynchronously; we must
+      //    wait for it here before calling compute.
+      const MAX_POLLS = 60          // 60 × 2s = 2 minutes max wait
+      const POLL_INTERVAL_MS = 2000
+      let ingestDone = false
+      setIngestPolling(true)
+
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
+        const status = await computeApi.getStatus(token, outletId, sessionData.session_id)
+
+        if (status.ingest_status === 'done') {
+          ingestDone = true
+          break
+        }
+        if (status.ingest_status === 'failed') {
+          throw new Error(status.error_message || 'Ingestion failed. Please re-upload the file.')
+        }
+        // Still pending/ingesting — keep polling
+      }
+
+      setIngestPolling(false)
+      if (!ingestDone) {
+        throw new Error('Ingestion is taking too long. Please check Railway logs and try again.')
+      }
+
+      // 3. Trigger compute job (ingestion is confirmed done)
       await computeApi.enqueue(token, outletId, sessionData.session_id)
 
       setStep(3)
@@ -271,6 +305,7 @@ export default function UploadPage() {
       setError(err.message || 'Failed to start compute.')
     } finally {
       setUploading(false)
+      setIngestPolling(false)
     }
   }
 
@@ -413,7 +448,7 @@ export default function UploadPage() {
 
           <div className="flex items-center gap-3 pt-2">
             <Button loading={uploading} icon={<Zap size={16} />} onClick={handleConfirm} size="lg">
-              {uploading ? 'Starting compute…' : 'Confirm & compute metrics'}
+              {ingestPolling ? 'Processing files…' : uploading ? 'Starting compute…' : 'Confirm & compute metrics'}
             </Button>
             <Button variant="ghost" onClick={() => setStep(1)}>
               Back
